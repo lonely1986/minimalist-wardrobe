@@ -1,0 +1,38 @@
+{
+	"pages": [
+		{
+			"path": "pages/index/index",
+			"style": { "navigationBarTitleText": "衣伴 · 衣物库" }
+		},
+		{
+			"path": "pages/category/index",
+			"style": { "navigationBarTitleText": "衣物分类" }
+		},
+		{
+			"path": "pages/recommend/index",
+			"style": { "navigationBarTitleText": "今日穿搭" }
+		},
+		{
+			"path": "pages/mine/index",
+			"style": { "navigationBarTitleText": "我的" }
+		}
+	],
+	"globalStyle": {
+		"navigationBarTextStyle": "black",
+		"navigationBarTitleText": "衣伴",
+		"navigationBarBackgroundColor": "#f8f7f2",
+		"backgroundColor": "#f8f7f2"
+	},
+	"tabBar": {
+		"color": "#a5aa9d",
+		"selectedColor": "#6e836b",
+		"backgroundColor": "#fffdfa",
+		"borderStyle": "white",
+		"list": [
+			{ "pagePath": "pages/index/index", "text": "衣物库" },
+			{ "pagePath": "pages/category/index", "text": "分类" },
+			{ "pagePath": "pages/recommend/index", "text": "穿搭" },
+			{ "pagePath": "pages/mine/index", "text": "我的" }
+		]
+	}
+}
