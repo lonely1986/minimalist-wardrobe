@@ -1,8 +1,11 @@
-// 仅操作本应用的两个键；读取到损坏的数据时不覆盖，交由 UI 提示。
+// 仅操作本应用的键；读取到损坏的数据时不覆盖，交由 UI 提示。
 const CLOTHES_KEY = "minimalist-wardrobe:clothes";
 const SETTINGS_KEY = "minimalist-wardrobe:settings";
+const LOGS_KEY = "minimalist-wardrobe:outfit-logs";
 const CATEGORIES = ["上装", "下装", "鞋子", "配饰"];
 const THICKNESSES = ["轻薄", "适中", "厚实"];
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const BACKUP_FORMAT = "minimalist-wardrobe-backup";
 let idSequence = 0;
 
 function read(key) {
@@ -35,6 +38,15 @@ function isStringArray(value) {
 	);
 }
 
+// 旧记录没有 price 字段，缺失时视为未填写。
+function isPrice(value) {
+	return (
+		value === undefined ||
+		value === null ||
+		(typeof value === "number" && Number.isFinite(value) && value >= 0)
+	);
+}
+
 function isClothing(item) {
 	return (
 		isRecord(item) &&
@@ -49,6 +61,7 @@ function isClothing(item) {
 		isStringArray(item.styles) &&
 		THICKNESSES.includes(item.thickness) &&
 		typeof item.favorite === "boolean" &&
+		isPrice(item.price) &&
 		typeof item.createdAt === "string" &&
 		item.createdAt.length > 0 &&
 		typeof item.updatedAt === "string" &&
@@ -128,6 +141,7 @@ export function saveClothing(item) {
 		styles: [],
 		thickness: "适中",
 		favorite: false,
+		price: null,
 		...previous,
 		...item,
 		createdAt: previous ? previous.createdAt : now,
@@ -182,6 +196,148 @@ export function clearClothes() {
 	}
 	write(CLOTHES_KEY, []);
 	clothes.forEach((item) => removeUnusedPhoto(item.photo, []));
+}
+
+function isOutfitLog(log) {
+	return (
+		isRecord(log) &&
+		typeof log.date === "string" &&
+		DATE_PATTERN.test(log.date) &&
+		isStringArray(log.itemIds) &&
+		typeof log.photo === "string" &&
+		typeof log.note === "string" &&
+		typeof log.occasion === "string" &&
+		typeof log.weather === "string" &&
+		typeof log.createdAt === "string" &&
+		typeof log.updatedAt === "string"
+	);
+}
+
+function cloneOutfitLog(log) {
+	return { ...log, itemIds: [...log.itemIds] };
+}
+
+/** @returns {import('../types').OutfitLog[]} 按日期升序。 */
+export function getOutfitLogs() {
+	const value = read(LOGS_KEY);
+	if (value === "" || value === undefined) return [];
+	if (
+		!Array.isArray(value) ||
+		!value.every(isOutfitLog) ||
+		new Set(value.map((log) => log.date)).size !== value.length
+	) {
+		throw new Error("穿搭日记数据已损坏，未进行任何修改");
+	}
+	return value
+		.map(cloneOutfitLog)
+		.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/**
+ * 每天一条记录：日期已存在时合并更新，并保留原创建时间。
+ * @param {import('../types').OutfitLogInput} input
+ * @returns {import('../types').OutfitLog}
+ */
+export function saveOutfitLog(input) {
+	if (!isRecord(input)) throw new TypeError("穿搭记录无效");
+	const logs = getOutfitLogs();
+	const index = logs.findIndex((log) => log.date === input.date);
+	const previous = index < 0 ? null : logs[index];
+	const now = new Date().toISOString();
+	const next = {
+		itemIds: [],
+		photo: "",
+		note: "",
+		occasion: "",
+		weather: "",
+		...previous,
+		...input,
+		createdAt: previous ? previous.createdAt : now,
+		updatedAt: now,
+	};
+	if (!isOutfitLog(next)) throw new TypeError("穿搭记录字段无效");
+	next.itemIds = [...new Set(next.itemIds)];
+	if (index < 0) logs.push(next);
+	else logs[index] = next;
+	write(LOGS_KEY, logs);
+	if (previous && previous.photo !== next.photo)
+		removeUnusedPhoto(previous.photo, logs);
+	return cloneOutfitLog(next);
+}
+
+/** @param {string} date @returns {boolean} 是否找到并删除。 */
+export function deleteOutfitLog(date) {
+	const logs = getOutfitLogs();
+	const target = logs.find((log) => log.date === date);
+	if (!target) return false;
+	const remaining = logs.filter((log) => log.date !== date);
+	write(LOGS_KEY, remaining);
+	removeUnusedPhoto(target.photo, remaining);
+	return true;
+}
+
+/**
+ * 导出衣物与穿搭记录。照片是本机文件路径，换设备后无法使用，因此不包含。
+ * @returns {string} JSON 文本
+ */
+export function exportBackup() {
+	return JSON.stringify({
+		format: BACKUP_FORMAT,
+		version: 1,
+		exportedAt: new Date().toISOString(),
+		clothes: getClothes().map((item) => ({ ...item, photo: "" })),
+		logs: getOutfitLogs().map((log) => ({ ...log, photo: "" })),
+	});
+}
+
+// 同一条记录保留较新的版本，并沿用本机已有的照片。
+function mergeRecords(current, incoming, keyOf) {
+	const merged = new Map(current.map((record) => [keyOf(record), record]));
+	incoming.forEach((record) => {
+		const local = merged.get(keyOf(record));
+		if (!local) merged.set(keyOf(record), record);
+		else if (record.updatedAt > local.updatedAt)
+			merged.set(keyOf(record), { ...record, photo: local.photo });
+	});
+	return [...merged.values()];
+}
+
+/**
+ * 合并备份，不删除本机已有记录。校验全部通过后才会写入。
+ * @param {string} text exportBackup 生成的文本
+ * @returns {{ clothes: number, logs: number }} 备份中的记录数
+ */
+export function importBackup(text) {
+	let backup;
+	try {
+		backup = JSON.parse(text);
+	} catch (error) {
+		throw new Error("备份内容无法识别");
+	}
+	if (
+		!isRecord(backup) ||
+		backup.format !== BACKUP_FORMAT ||
+		backup.version !== 1 ||
+		!Array.isArray(backup.clothes) ||
+		!backup.clothes.every(isClothing) ||
+		!Array.isArray(backup.logs) ||
+		!backup.logs.every(isOutfitLog)
+	) {
+		throw new Error("备份内容无法识别");
+	}
+	const clothes = mergeRecords(
+		getClothes(),
+		backup.clothes,
+		(item) => item.id,
+	);
+	const logs = mergeRecords(
+		getOutfitLogs(),
+		backup.logs,
+		(log) => log.date,
+	);
+	write(CLOTHES_KEY, clothes);
+	write(LOGS_KEY, logs);
+	return { clothes: backup.clothes.length, logs: backup.logs.length };
 }
 
 /** @returns {import('../types').Settings} */

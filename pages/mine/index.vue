@@ -39,11 +39,38 @@
 			><text class="section-title">我的空间</text></view
 		>
 		<view class="settings-card">
+			<view class="setting-row actionable" @click="goStats">
+				<view class="setting-copy"
+					><text class="row-title">穿着统计</text
+					><text class="row-description"
+						>常穿排行、闲置单品与单次成本</text
+					></view
+				><text class="arrow">›</text>
+			</view>
+			<view class="separator"></view>
+			<view class="setting-row actionable" @click="backup">
+				<view class="setting-copy"
+					><text class="row-title">备份数据</text
+					><text class="row-description"
+						>复制衣物和穿搭记录，照片不包含在内</text
+					></view
+				><text class="arrow">›</text>
+			</view>
+			<view class="separator"></view>
+			<view class="setting-row actionable" @click="confirmRestore">
+				<view class="setting-copy"
+					><text class="row-title">恢复数据</text
+					><text class="row-description"
+						>从已复制的备份内容合并到本机</text
+					></view
+				><text class="arrow">›</text>
+			</view>
+			<view class="separator"></view>
 			<view class="setting-row actionable" @click="confirmClear">
 				<view class="setting-copy"
 					><text class="row-title">清空衣物缓存</text
 					><text class="row-description"
-						>删除保存在本机的衣物与照片，不影响设置</text
+						>删除保存在本机的衣物与照片，不影响设置和穿搭日记</text
 					></view
 				><text class="arrow">›</text>
 			</view>
@@ -56,7 +83,7 @@
 			</view>
 		</view>
 		<view class="privacy-note"
-			>衣物数据仅保存在当前设备，清除小程序数据或更换设备后可能丢失。</view
+			>衣物与穿搭记录仅保存在当前设备，清除小程序数据或更换设备后可能丢失。使用批量添加时，所选照片会发送到识别服务，服务不保存照片。</view
 		>
 		<view class="footer"
 			>— &nbsp; 愿每个平常日子，都有温柔相伴 &nbsp; —</view
@@ -65,7 +92,13 @@
 </template>
 
 <script>
-import { getSettings, saveSettings, clearClothes } from "@/utils/storage.js";
+import {
+	getSettings,
+	saveSettings,
+	clearClothes,
+	exportBackup,
+	importBackup,
+} from "@/utils/storage.js";
 
 export default {
 	data() {
@@ -106,6 +139,71 @@ export default {
 				uni.showToast({ title: "设置保存失败，请重试", icon: "none" });
 			}
 		},
+		goStats() {
+			uni.navigateTo({ url: "/pages/stats/index" });
+		},
+		backup() {
+			let text;
+			try {
+				text = exportBackup();
+			} catch (error) {
+				uni.showToast({ title: "数据读取失败", icon: "none" });
+				return;
+			}
+			uni.setClipboardData({
+				data: text,
+				success: () => {
+					uni.showModal({
+						title: "备份已复制",
+						content:
+							"请粘贴到微信「文件传输助手」等地方保存。照片不包含在备份中，恢复后需要重新添加。",
+						showCancel: false,
+						confirmText: "知道了",
+						confirmColor: "#82917c",
+					});
+				},
+				fail: () => {
+					uni.showToast({ title: "复制失败，请重试", icon: "none" });
+				},
+			});
+		},
+		confirmRestore() {
+			uni.showModal({
+				title: "恢复数据",
+				content:
+					"请先复制之前保存的备份内容。恢复时会与本机数据合并，不会删除现有记录。",
+				confirmText: "开始恢复",
+				confirmColor: "#82917c",
+				success: (result) => {
+					if (result.confirm) this.restore();
+				},
+			});
+		},
+		restore() {
+			uni.getClipboardData({
+				success: (result) => {
+					try {
+						const count = importBackup(result.data);
+						uni.$emit("clothes-changed");
+						uni.showModal({
+							title: "恢复完成",
+							content: `备份中有 ${count.clothes} 件衣物、${count.logs} 条穿搭记录，已合并到本机。`,
+							showCancel: false,
+							confirmText: "好的",
+							confirmColor: "#82917c",
+						});
+					} catch (error) {
+						uni.showToast({
+							title: error.message || "恢复失败，请重试",
+							icon: "none",
+						});
+					}
+				},
+				fail: () => {
+					uni.showToast({ title: "无法读取剪贴板", icon: "none" });
+				},
+			});
+		},
 		confirmClear() {
 			if (this.clearing) return;
 			this.clearing = true;
@@ -136,7 +234,7 @@ export default {
 			uni.showModal({
 				title: "关于衣伴",
 				content:
-					"衣伴是一座随身的小衣橱。整理四季衣物，看看天气，让穿搭与日常都多一分从容。\n\n天气数据由 Open-Meteo 提供。衣物数据保存在本机。",
+					"衣伴是一座随身的小衣橱。整理四季衣物，看看天气，让穿搭与日常都多一分从容。\n\nWeather data by Open-Meteo.com，遵循 CC BY 4.0 协议。衣物与穿搭记录保存在本机；批量添加时，照片会发送到第三方模型服务完成识别。",
 				showCancel: false,
 				confirmText: "知道了",
 				confirmColor: "#82917c",

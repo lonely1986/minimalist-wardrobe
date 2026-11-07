@@ -111,6 +111,7 @@
 				v-for="item in filteredClothes"
 				:key="item.id"
 				:item="item"
+				:wear="wear[item.id]"
 				@edit="openForm"
 				@delete="confirmDelete"
 				@favorite="favorite"
@@ -128,13 +129,20 @@
 <script>
 import ClothingCard from "@/components/ClothingCard.vue";
 import ClothingForm from "@/components/ClothingForm.vue";
-import { getClothes, deleteClothing, toggleFavorite } from "@/utils/storage.js";
+import {
+	getClothes,
+	getOutfitLogs,
+	deleteClothing,
+	toggleFavorite,
+} from "@/utils/storage.js";
+import { formatDate, summarizeWear } from "@/utils/outfitStats.js";
 
 export default {
 	components: { ClothingCard, ClothingForm },
 	data() {
 		return {
 			clothes: [],
+			wear: {},
 			categories: ["上装", "下装", "鞋子", "配饰"],
 			marks: ["衣", "裳", "履", "饰"],
 			seasonOptions: ["全部", "春", "夏", "秋", "冬"],
@@ -183,6 +191,15 @@ export default {
 			} catch (error) {
 				this.loadError = true;
 				uni.showToast({ title: "衣物读取失败", icon: "none" });
+			}
+			try {
+				this.wear = summarizeWear(
+					getOutfitLogs(),
+					formatDate(new Date()),
+				);
+			} catch (error) {
+				// 日记损坏不影响衣物浏览，日记页会给出提示。
+				this.wear = {};
 			}
 		},
 		categoryCount(category) {

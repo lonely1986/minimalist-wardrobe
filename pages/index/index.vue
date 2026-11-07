@@ -27,6 +27,10 @@
 				<text class="add-symbol">＋</text> 添置衣物
 			</button></view
 		>
+		<view class="batch-row" @click="goImport"
+			><text>有很多衣服要录入？试试拍照批量添加</text
+			><text class="batch-arrow">›</text></view
+		>
 		<view class="content-heading"
 			><view
 				><text class="section-overline">THE COLLECTION</text
@@ -117,6 +121,7 @@
 				v-for="item in filteredClothes"
 				:key="item.id"
 				:item="item"
+				:wear="wear[item.id]"
 				@edit="openForm"
 				@delete="confirmDelete"
 				@favorite="favorite"
@@ -136,13 +141,20 @@
 <script>
 import ClothingCard from "@/components/ClothingCard.vue";
 import ClothingForm from "@/components/ClothingForm.vue";
-import { getClothes, deleteClothing, toggleFavorite } from "@/utils/storage.js";
+import {
+	getClothes,
+	getOutfitLogs,
+	deleteClothing,
+	toggleFavorite,
+} from "@/utils/storage.js";
+import { formatDate, summarizeWear } from "@/utils/outfitStats.js";
 
 export default {
 	components: { ClothingCard, ClothingForm },
 	data() {
 		return {
 			clothes: [],
+			wear: {},
 			seasonOptions: ["全部", "春", "夏", "秋", "冬"],
 			categoryOptions: ["全部", "上装", "下装", "鞋子", "配饰"],
 			selectedSeason: "全部",
@@ -189,6 +201,15 @@ export default {
 				this.loadError = true;
 				uni.showToast({ title: "衣物读取失败", icon: "none" });
 			}
+			try {
+				this.wear = summarizeWear(
+					getOutfitLogs(),
+					formatDate(new Date()),
+				);
+			} catch (error) {
+				// 日记损坏不影响衣物浏览，日记页会给出提示。
+				this.wear = {};
+			}
 		},
 		openForm(item) {
 			this.editingItem = item || null;
@@ -206,6 +227,9 @@ export default {
 		resetFilters() {
 			this.selectedSeason = "全部";
 			this.selectedCategory = "全部";
+		},
+		goImport() {
+			uni.navigateTo({ url: "/pages/import/index" });
 		},
 		goCategory() {
 			uni.switchTab({
@@ -390,6 +414,22 @@ export default {
 	font-size: 23rpx;
 	line-height: 68rpx;
 	white-space: nowrap;
+}
+.batch-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin: 20rpx 0 36rpx;
+	padding: 18rpx 24rpx;
+	border-radius: 12rpx;
+	background: #f0f2eb;
+	color: #6e7d69;
+	font-size: 23rpx;
+}
+.batch-arrow {
+	color: #a5ae9f;
+	font-size: 32rpx;
+	line-height: 1;
 }
 .add-symbol {
 	font-size: 28rpx;

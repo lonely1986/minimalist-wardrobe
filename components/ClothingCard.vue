@@ -29,6 +29,7 @@
 				</button></view
 			>
 			<text class="details">{{ details }}</text>
+			<text class="wear">{{ wearText }}</text>
 			<view class="card-actions"
 				><button class="action" @click.stop="$emit('edit', item)">
 					编辑</button
@@ -44,9 +45,14 @@
 </template>
 
 <script>
+import { costPerWear, formatMoney } from "@/utils/outfitStats.js";
+
 export default {
 	name: "ClothingCard",
-	props: { item: { type: Object, required: true } },
+	props: {
+		item: { type: Object, required: true },
+		wear: { type: Object, default: null },
+	},
 	emits: ["edit", "delete", "favorite"],
 	data() {
 		return { imageFailed: false };
@@ -60,6 +66,15 @@ export default {
 				parts.push(this.item.seasons.join(" / "));
 			if (this.item.color) parts.push(this.item.color);
 			return parts.join(" · ") || "留一份心意给日常";
+		},
+		wearText() {
+			const count = this.wear ? this.wear.count : 0;
+			const cost = costPerWear(this.item.price, count);
+			const parts = [count ? `穿过 ${count} 次` : "还没穿过"];
+			if (cost !== null) parts.push(`¥${formatMoney(cost)}/次`);
+			else if (typeof this.item.price === "number")
+				parts.push(`¥${formatMoney(this.item.price)}`);
+			return parts.join(" · ");
 		},
 	},
 	watch: {
@@ -186,5 +201,11 @@ export default {
 	.card-body {
 		padding: 14rpx;
 	}
+}
+.wear {
+	display: block;
+	margin-top: 6rpx;
+	color: #93a08e;
+	font-size: 20rpx;
 }
 </style>

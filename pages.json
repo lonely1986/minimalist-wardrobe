@@ -13,8 +13,20 @@
 			"style": { "navigationBarTitleText": "今日穿搭" }
 		},
 		{
+			"path": "pages/diary/index",
+			"style": { "navigationBarTitleText": "穿搭日记" }
+		},
+		{
 			"path": "pages/mine/index",
 			"style": { "navigationBarTitleText": "我的" }
+		},
+		{
+			"path": "pages/import/index",
+			"style": { "navigationBarTitleText": "批量添加" }
+		},
+		{
+			"path": "pages/stats/index",
+			"style": { "navigationBarTitleText": "穿着统计" }
 		}
 	],
 	"globalStyle": {
@@ -32,6 +44,7 @@
 			{ "pagePath": "pages/index/index", "text": "衣物库" },
 			{ "pagePath": "pages/category/index", "text": "分类" },
 			{ "pagePath": "pages/recommend/index", "text": "穿搭" },
+			{ "pagePath": "pages/diary/index", "text": "日记" },
 			{ "pagePath": "pages/mine/index", "text": "我的" }
 		]
 	}

@@ -21,6 +21,8 @@ export interface Clothing {
 	styles: string[];
 	thickness: Thickness;
 	favorite: boolean;
+	/** 购买价格（元）；旧记录可能缺失，null 表示未填写。 */
+	price?: number | null;
 	/** ISO 8601 时间字符串。 */
 	createdAt: string;
 	/** ISO 8601 时间字符串。 */
@@ -34,8 +36,36 @@ export type ClothingInput =
 	  })
 	| (Partial<Omit<Clothing, "createdAt" | "updatedAt">> & { id: string });
 
+/** 一天一条穿搭记录；日期晚于今天时视为计划，不计入穿着次数。 */
+export interface OutfitLog {
+	/** 本地日期，格式为 YYYY-MM-DD，同时是记录的唯一键。 */
+	date: string;
+	/** 衣物可能已被删除，读取时需容忍找不到的 id。 */
+	itemIds: string[];
+	photo: string;
+	note: string;
+	occasion: string;
+	weather: string;
+	/** ISO 8601 时间字符串。 */
+	createdAt: string;
+	/** ISO 8601 时间字符串。 */
+	updatedAt: string;
+}
+
+export type OutfitLogInput = Partial<
+	Omit<OutfitLog, "createdAt" | "updatedAt">
+> & { date: string };
+
+export interface WearSummary {
+	count: number;
+	/** 最近一次穿着日期，YYYY-MM-DD。 */
+	lastWorn: string;
+}
+
 export interface Settings {
 	festivalReminder: boolean;
+	/** 上次选择的城市名，见 utils/cities.js。 */
+	city?: string;
 }
 
 export interface OutfitOptions {

@@ -17,7 +17,7 @@
 				<text class="weather-mark">☼</text>
 			</view>
 			<text class="weather-hint"
-				>定位仅用于查询天气；也可以输入坐标或自行填写气温。</text
+				>定位仅用于查询天气；也可以选择城市或自行填写气温。</text
 			>
 
 			<view v-if="weatherLoading" class="notice" role="status">{{
@@ -63,10 +63,16 @@
 				</button>
 			</view>
 			<view v-if="forecast && !weatherLoading" class="source-note"
-				>Open-Meteo 预报 · 日期为所选地点当地日期<text
+				><text v-if="selectedCity">{{ selectedCity }} · </text>日期为所选地点当地日期<text
 					v-if="forecast.timezone"
 					>（{{ forecast.timezone }}）</text
 				></view
+			>
+			<text
+				v-if="forecast && !weatherLoading"
+				class="source-note source-link"
+				@click="copySourceLink"
+				>Weather data by Open-Meteo.com（CC BY 4.0，点击复制链接）</text
 			>
 
 			<view
@@ -109,7 +115,34 @@
 				◎ 使用当前位置查询天气
 			</button>
 			<view class="input-section">
-				<text class="input-label">或者输入城市坐标</text>
+				<text class="input-label">或者选择城市</text>
+				<input
+					v-model="cityQuery"
+					class="soft-input city-search"
+					type="text"
+					placeholder="搜索城市，如 杭州"
+					placeholder-class="placeholder"
+				/>
+				<view v-if="visibleCities.length" class="city-list">
+					<view
+						v-for="city in visibleCities"
+						:key="city.name"
+						class="pill city-pill"
+						:class="{ active: selectedCity === city.name }"
+						@click="selectCity(city)"
+						>{{ city.name }}</view
+					>
+				</view>
+				<text v-else class="input-help"
+					>没有找到这个城市，可以换个名称，或手动输入气温。</text
+				>
+			</view>
+			<view class="input-section">
+				<text class="more-link" @click="showCoordinates = !showCoordinates"
+					>{{ showCoordinates ? "收起经纬度" : "找不到城市？使用经纬度" }}</text
+				>
+			</view>
+			<view v-if="showCoordinates" class="input-section">
 				<view class="coordinate-row">
 					<input
 						v-model="latitudeInput"
@@ -238,6 +271,13 @@
 				outfit.missing.join("、")
 			}}。可以添加对应单品，再试试搭配。</view
 		>
+		<button
+			v-if="hasOutfitItems"
+			class="record-button"
+			@click="recordOutfit"
+		>
+			{{ selectedDay === 0 ? "今天穿这套，记入日记" : "排进明天的计划" }}
+		</button>
 		<view v-if="changeMessage" class="change-note">{{
 			changeMessage
 		}}</view>
@@ -248,7 +288,15 @@
 <script setup>
 import { ref, computed, onBeforeUnmount } from "vue";
 import { onShow, onUnload } from "@dcloudio/uni-app";
-import { getClothes } from "@/utils/storage.js";
+import {
+	getClothes,
+	getOutfitLogs,
+	getSettings,
+	saveOutfitLog,
+	saveSettings,
+} from "@/utils/storage.js";
+import { CITIES, findCity } from "@/utils/cities.js";
+import { addDays, formatDate } from "@/utils/outfitStats.js";
 import { recommendOutfit } from "@/utils/clothing.js";
 import {
 	fetchForecast,
@@ -262,6 +310,9 @@ const selectedDay = ref(0);
 const latitudeInput = ref("");
 const longitudeInput = ref("");
 const temperatureInput = ref("");
+const cityQuery = ref("");
+const selectedCity = ref("");
+const showCoordinates = ref(false);
 const weatherLoading = ref(false);
 const loadingText = ref("");
 const weatherError = ref("");
@@ -286,6 +337,12 @@ const recommendationTemperature = computed(() => {
 	const day = forecast.value.days[selectedDay.value];
 	return (day.max + day.min) / 2;
 });
+const visibleCities = computed(() => {
+	const query = cityQuery.value.trim();
+	return query
+		? CITIES.filter((city) => city.name.includes(query))
+		: CITIES.slice(0, 12);
+});
 const canRecommend = computed(
 	() =>
 		!clothesLoading.value &&
@@ -304,6 +361,10 @@ const outfitSlots = computed(() => [
 		item: outfit.value && outfit.value.accessory,
 	},
 ]);
+
+const hasOutfitItems = computed(() =>
+	outfitSlots.value.some((slot) => slot.item),
+);
 
 function formatTemperature(value) {
 	return String(Math.round(value * 10) / 10);
@@ -345,6 +406,7 @@ async function requestForecast(latitude, longitude, version) {
 }
 
 function loadLocation() {
+	selectedCity.value = "";
 	lastWeatherSource = { type: "location" };
 	const version = beginWeather("正在获取位置，请留意定位权限提示…");
 	uni.getLocation({
@@ -361,8 +423,8 @@ function loadLocation() {
 					(error && error.errMsg) || "",
 				);
 			weatherError.value = locationDenied.value
-				? "定位权限未开启。可在设置中允许定位，或输入坐标、手动气温。"
-				: "暂时无法获取位置，请检查定位服务，或输入坐标、手动气温。";
+				? "定位权限未开启。可在设置中允许定位，或选择城市、手动输入气温。"
+				: "暂时无法获取位置，请检查定位服务，或选择城市、手动输入气温。";
 		},
 	});
 }
@@ -374,6 +436,34 @@ function parseNumber(value) {
 	return Number.isFinite(number) ? number : null;
 }
 
+function selectCity(city) {
+	selectedCity.value = city.name;
+	lastWeatherSource = {
+		type: "coordinates",
+		latitude: city.latitude,
+		longitude: city.longitude,
+	};
+	try {
+		saveSettings({ city: city.name });
+	} catch (error) {
+		// 记不住城市不影响本次查询。
+	}
+	const version = beginWeather(`正在查询${city.name}的天气…`);
+	requestForecast(city.latitude, city.longitude, version);
+}
+
+function savedCity() {
+	try {
+		return findCity(getSettings().city);
+	} catch (error) {
+		return null;
+	}
+}
+
+function copySourceLink() {
+	uni.setClipboardData({ data: "https://open-meteo.com/" });
+}
+
 function loadCoordinates() {
 	const latitude = parseNumber(latitudeInput.value);
 	const longitude = parseNumber(longitudeInput.value);
@@ -383,6 +473,7 @@ function loadCoordinates() {
 		locationDenied.value = false;
 		return;
 	}
+	selectedCity.value = "";
 	lastWeatherSource = { type: "coordinates", latitude, longitude };
 	const version = beginWeather("正在查询所填坐标的天气…");
 	requestForecast(latitude, longitude, version);
@@ -508,6 +599,57 @@ function changeOutfit() {
 	makeRecommendation(true);
 }
 
+function recordWeather() {
+	if (!forecast.value)
+		return `${formatTemperature(manualTemperature.value)}°C`;
+	const day = forecast.value.days[selectedDay.value];
+	return `${weatherLabel(day.code)} ${formatTemperature(day.max)}°/${formatTemperature(day.min)}°`;
+}
+
+function writeRecord(date) {
+	try {
+		saveOutfitLog({
+			date,
+			itemIds: outfitSlots.value
+				.filter((slot) => slot.item)
+				.map((slot) => slot.item.id),
+			weather: recordWeather(),
+		});
+		uni.showToast({
+			title: selectedDay.value === 0 ? "已记入日记" : "已排进计划",
+			icon: "success",
+		});
+	} catch (error) {
+		uni.showToast({ title: "保存失败，请重试", icon: "none" });
+	}
+}
+
+function recordOutfit() {
+	const date = forecast.value
+		? forecast.value.days[selectedDay.value].date
+		: addDays(formatDate(new Date()), selectedDay.value);
+	let exists;
+	try {
+		exists = getOutfitLogs().some((log) => log.date === date);
+	} catch (error) {
+		uni.showToast({ title: "日记读取失败", icon: "none" });
+		return;
+	}
+	if (!exists) {
+		writeRecord(date);
+		return;
+	}
+	uni.showModal({
+		title: "这一天已有记录",
+		content: "要用这套搭配替换当天的单品吗？照片和备注会保留。",
+		confirmText: "替换",
+		confirmColor: "#82917c",
+		success(result) {
+			if (result.confirm) writeRecord(date);
+		},
+	});
+}
+
 function cleanup() {
 	if (disposed) return;
 	disposed = true;
@@ -521,7 +663,10 @@ onShow(() => {
 	loadClothes();
 	if (!started) {
 		started = true;
-		loadLocation();
+		// 已选过城市时直接使用，不再弹定位授权。
+		const city = savedCity();
+		if (city) selectCity(city);
+		else loadLocation();
 	}
 });
 onUnload(cleanup);
@@ -865,5 +1010,38 @@ button::after {
 	color: #c4b8af;
 	font-size: 21rpx;
 	letter-spacing: 2rpx;
+}
+.city-search {
+	display: block;
+	width: 100%;
+}
+.city-list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12rpx;
+	margin-top: 14rpx;
+}
+.city-pill {
+	background: #faf9f7;
+	color: #8d7f76;
+}
+.source-link,
+.more-link {
+	color: #9e7767;
+}
+.more-link {
+	display: block;
+	font-size: 22rpx;
+}
+.record-button {
+	margin: 24rpx 0 0;
+	border-radius: 14rpx;
+	background: #7d8f78;
+	color: #fff;
+	font-size: 27rpx;
+	line-height: 84rpx;
+}
+.record-button::after {
+	border: 0;
 }
 </style>

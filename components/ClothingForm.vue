@@ -95,6 +95,19 @@
 				/></view>
 				<view class="field"
 					><text class="field-label"
+						>购买价格<text class="field-note"
+							>选填，用于计算单次成本</text
+						></text
+					><input
+						v-model="form.price"
+						class="text-input"
+						type="digit"
+						maxlength="10"
+						placeholder="单位：元"
+						placeholder-class="placeholder"
+				/></view>
+				<view class="field"
+					><text class="field-label"
 						>风格 <text class="field-note">可多选</text></text
 					><view class="options"
 						><view
@@ -147,6 +160,7 @@
 
 <script>
 import { saveClothing } from "@/utils/storage.js";
+import { pickPhoto, removePhoto } from "@/utils/photo.js";
 
 const categories = ["上装", "下装", "鞋子", "配饰"];
 const accessoryTypes = ["围巾", "帽子", "首饰", "包包"];
@@ -184,6 +198,7 @@ export default {
 				styles: Array.isArray(item.styles) ? [...item.styles] : [],
 				thickness: item.thickness || "适中",
 				favorite: !!item.favorite,
+				price: typeof item.price === "number" ? String(item.price) : "",
 			},
 			choosing: false,
 			saving: false,
@@ -199,16 +214,8 @@ export default {
 		toast(title) {
 			uni.showToast({ title, icon: "none" });
 		},
-		removeSavedPhoto(path) {
-			try {
-				if (path && typeof uni.removeSavedFile === "function")
-					uni.removeSavedFile({ filePath: path, fail() {} });
-			} catch (error) {
-				/* 清理失败不影响衣物保存 */
-			}
-		},
 		discardPendingPhoto() {
-			if (this.pendingPhoto) this.removeSavedPhoto(this.pendingPhoto);
+			removePhoto(this.pendingPhoto);
 			this.pendingPhoto = "";
 		},
 		close() {
@@ -224,70 +231,23 @@ export default {
 			if (index === -1) values.push(value);
 			else values.splice(index, 1);
 		},
-		choosePhoto() {
+		async choosePhoto() {
 			if (this.choosing || this.saving) return;
 			this.choosing = true;
 			try {
-				uni.chooseImage({
-					count: 1,
-					sizeType: ["compressed"],
-					sourceType: ["album", "camera"],
-					success: (result) => {
-						if (!this.alive) return;
-						const path =
-							result.tempFilePaths && result.tempFilePaths[0];
-						if (!path) {
-							this.choosing = false;
-							this.toast("未获取到照片");
-							return;
-						}
-						try {
-							uni.saveFile({
-								tempFilePath: path,
-								success: (saved) => {
-									if (!saved.savedFilePath) {
-										if (this.alive) {
-											this.choosing = false;
-											this.toast("照片保存失败，请重试");
-										}
-										return;
-									}
-									if (!this.alive) {
-										this.removeSavedPhoto(
-											saved.savedFilePath,
-										);
-										return;
-									}
-									this.discardPendingPhoto();
-									this.pendingPhoto = saved.savedFilePath;
-									this.form.photo = saved.savedFilePath;
-									this.choosing = false;
-								},
-								fail: () => {
-									if (this.alive) {
-										this.choosing = false;
-										this.toast("照片保存失败，请重试");
-									}
-								},
-							});
-						} catch (error) {
-							if (this.alive) {
-								this.choosing = false;
-								this.toast("照片保存失败，请重试");
-							}
-						}
-					},
-					fail: (error) => {
-						if (this.alive) {
-							this.choosing = false;
-							if (!error || !/cancel/i.test(error.errMsg || ""))
-								this.toast("选择照片失败，请重试");
-						}
-					},
-				});
+				const path = await pickPhoto();
+				if (!path) return;
+				if (!this.alive) {
+					removePhoto(path);
+					return;
+				}
+				this.discardPendingPhoto();
+				this.pendingPhoto = path;
+				this.form.photo = path;
 			} catch (error) {
-				this.choosing = false;
-				this.toast("选择照片失败，请重试");
+				if (this.alive) this.toast(error.message);
+			} finally {
+				if (this.alive) this.choosing = false;
 			}
 		},
 		submit() {
@@ -306,6 +266,10 @@ export default {
 				this.form.seasons.some((value) => !seasons.includes(value))
 			)
 				return this.toast("请选择适穿季节");
+			const priceText = String(this.form.price).trim();
+			const price = priceText === "" ? null : Number(priceText);
+			if (price !== null && (!Number.isFinite(price) || price < 0))
+				return this.toast("请填写有效的价格");
 			this.saving = true;
 			const now = new Date().toISOString();
 			const record = {
@@ -313,6 +277,7 @@ export default {
 				...this.form,
 				name,
 				color: this.form.color.trim(),
+				price,
 				seasons: [...this.form.seasons],
 				styles: [...this.form.styles],
 				id:
@@ -350,6 +315,8 @@ export default {
 	position: fixed;
 	z-index: 99;
 	inset: 0;
+	/* H5 的 tabBar 是页面元素，需让出其高度；其他平台变量缺失时回退为 0。 */
+	bottom: var(--window-bottom, 0px);
 	display: flex;
 	align-items: flex-end;
 	background: rgba(46, 49, 42, 0.48);
@@ -358,7 +325,8 @@ export default {
 	display: flex;
 	flex-direction: column;
 	width: 100%;
-	max-height: 90vh;
+	/* 需为确定高度：只用 max-height 时 scroll-view 撑满内容，无法滚动。 */
+	height: 90%;
 	overflow: hidden;
 	border-radius: 32rpx 32rpx 0 0;
 	background: #fcfaf6;
