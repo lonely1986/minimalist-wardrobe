@@ -126,9 +126,33 @@ export function fetchForecast(latitude, longitude) {
 						typeof data.timezone === "string" ? data.timezone : "",
 				});
 			},
-			fail() {
-				if (!cancelled)
-					reject(new Error("天气获取失败，请检查网络后重试。"));
+			fail(error) {
+				if (cancelled) return;
+				const detail =
+					error && error.errMsg ? String(error.errMsg) : "";
+				if (/url not in domain list|not in domain list/i.test(detail)) {
+					reject(
+						new Error(
+							`微信拦截了天气请求（${detail}）。项目配置中已包含 api.open-meteo.com；请核对实际请求目标、重定向域名和当前项目 AppID。`,
+						),
+					);
+					return;
+				}
+				if (/timeout/i.test(detail)) {
+					reject(
+						new Error(
+							"天气请求超时，请检查手机网络，或确认天气接口可从当前网络访问。",
+						),
+					);
+					return;
+				}
+				reject(
+					new Error(
+						detail
+							? `天气请求失败：${detail}`
+							: "天气获取失败，请检查网络后重试。",
+					),
+				);
 			},
 		});
 	});

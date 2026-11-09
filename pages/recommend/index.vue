@@ -63,8 +63,8 @@
 				</button>
 			</view>
 			<view v-if="forecast && !weatherLoading" class="source-note"
-				><text v-if="selectedCity">{{ selectedCity }} · </text>日期为所选地点当地日期<text
-					v-if="forecast.timezone"
+				><text v-if="selectedCity">{{ selectedCity }} · </text
+				>日期为所选地点当地日期<text v-if="forecast.timezone"
 					>（{{ forecast.timezone }}）</text
 				></view
 			>
@@ -138,8 +138,14 @@
 				>
 			</view>
 			<view class="input-section">
-				<text class="more-link" @click="showCoordinates = !showCoordinates"
-					>{{ showCoordinates ? "收起经纬度" : "找不到城市？使用经纬度" }}</text
+				<text
+					class="more-link"
+					@click="showCoordinates = !showCoordinates"
+					>{{
+						showCoordinates
+							? "收起经纬度"
+							: "找不到城市？使用经纬度"
+					}}</text
 				>
 			</view>
 			<view v-if="showCoordinates" class="input-section">
@@ -367,7 +373,7 @@ const hasOutfitItems = computed(() =>
 );
 
 function formatTemperature(value) {
-	return String(Math.round(value * 10) / 10);
+	return String(Math.round(value));
 }
 
 function beginWeather(text) {
